@@ -6,6 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class SplitfairApplication {
 
+    //test
+
 	public static void main(String[] args) {
 		SpringApplication.run(SplitfairApplication.class, args);
 	}
