@@ -30,51 +30,56 @@ public class ExpenseServiceImpl implements ExpenseService {
 
 
       //Tạo mới Expense (chưa chia shares)
-    @Override
-    public ExpenseDTO createExpense(ExpenseDTO dto) {
-        //  Map DTO → Entity
-        Expense expense = expenseMapper.toEntity(dto);
+      @Override
+      public ExpenseDTO createExpense(ExpenseDTO dto) {
+          //  Map DTO → Entity
+          Expense expense = expenseMapper.toEntity(dto);
 
-        // Liên kết Bill
-        if (dto.getBillId() != null) {
-            Bill bill = billRepository.findById(dto.getBillId())
-                    .orElseThrow(() -> new RuntimeException("Bill not found with id: " + dto.getBillId()));
-            expense.setBill(bill);
-        }
+          // Liên kết Bill
+          if (dto.getBillId() != null) {
+              Bill bill = billRepository.findById(dto.getBillId())
+                      .orElseThrow(() -> new RuntimeException("Bill not found with id: " + dto.getBillId()));
+              expense.setBill(bill);
 
-        // Gắn người tạo
-        if (dto.getCreatedBy() != null) {
-            User creator = userRepository.findById(dto.getCreatedBy())
-                    .orElseThrow(() -> new RuntimeException("User not found with id: " + dto.getCreatedBy()));
-            expense.setCreatedBy(creator);
-        }
+              // Cập nhật lại totalAmount của Bill sau khi thêm Expense
+              BigDecimal totalAmount = bill.getTotalAmount().add(expense.getAmount());
+              bill.setTotalAmount(totalAmount);
+              billRepository.save(bill);  // Lưu Bill với tổng tiền mới
+          }
 
-        // Gắn người trả tiền
-        if (dto.getPaidBy() != null) {
-            User payer = userRepository.findById(dto.getPaidBy())
-                    .orElseThrow(() -> new RuntimeException("User not found with id: " + dto.getPaidBy()));
-            expense.setPaidBy(payer);
-        }
+          // Gắn người tạo
+          if (dto.getCreatedBy() != null) {
+              User creator = userRepository.findById(dto.getCreatedBy())
+                      .orElseThrow(() -> new RuntimeException("User not found with id: " + dto.getCreatedBy()));
+              expense.setCreatedBy(creator);
+          }
 
-        //  Gắn user_id (nếu chưa có thì mặc định bằng createdBy)
-        if (dto.getUserId() != null) {
-            User user = userRepository.findById(dto.getUserId())
-                    .orElseThrow(() -> new RuntimeException("User not found with id: " + dto.getUserId()));
-            expense.setUser(user);
-        } else if (expense.getCreatedBy() != null) {
-            expense.setUser(expense.getCreatedBy());
-        }
+          // Gắn người trả tiền
+          if (dto.getPaidBy() != null) {
+              User payer = userRepository.findById(dto.getPaidBy())
+                      .orElseThrow(() -> new RuntimeException("User not found with id: " + dto.getPaidBy()));
+              expense.setPaidBy(payer);
+          }
 
-        //  Gán trạng thái mặc định
-        if (expense.getStatus() == null) {
-            expense.setStatus(ExpenseStatus.PENDING);
-        }
+          // Gắn user_id nếu chưa có thì mặc định bằng createdBy
+          if (dto.getUserId() != null) {
+              User user = userRepository.findById(dto.getUserId())
+                      .orElseThrow(() -> new RuntimeException("User not found with id: " + dto.getUserId()));
+              expense.setUser(user);
+          } else if (expense.getCreatedBy() != null) {
+              expense.setUser(expense.getCreatedBy());
+          }
 
-        //  Lưu vào DB
-        expense = expenseRepository.save(expense);
+          // Gán trạng thái mặc định
+          if (expense.getStatus() == null) {
+              expense.setStatus(ExpenseStatus.PENDING);
+          }
 
-        return expenseMapper.toDTO(expense);
-    }
+          // Lưu vào DB
+          expense = expenseRepository.save(expense);
+
+          return expenseMapper.toDTO(expense);
+      }
 
 
      //Lấy tất cả Expense
@@ -139,23 +144,41 @@ public class ExpenseServiceImpl implements ExpenseService {
         Expense expense = expenseRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Expense not found with id: " + id));
 
-        expense.setDescription(dto.getDescription());
-        expense.setAmount(dto.getAmount());
+        // Lấy Bill cũ
+        Bill bill = expense.getBill();
 
+        // Lưu số tiền cũ
+        BigDecimal oldAmount = expense.getAmount();
+
+        // Cập nhật các trường thông tin khác
+        expense.setDescription(dto.getDescription());
+        expense.setAmount(dto.getAmount());  // Cập nhật số tiền
+
+        // Tính toán lại totalAmount của Bill
+        BigDecimal newAmount = dto.getAmount();
+        BigDecimal totalAmount = bill.getTotalAmount().subtract(oldAmount).add(newAmount);
+
+        // Cập nhật lại totalAmount của Bill
+        bill.setTotalAmount(totalAmount);
+        billRepository.save(bill);  // Lưu Bill với totalAmount mới
+
+        // Cập nhật các trường khác như paidBy, status nếu có
         if (dto.getPaidBy() != null) {
             User payer = userRepository.findById(dto.getPaidBy())
                     .orElseThrow(() -> new RuntimeException("User not found with id: " + dto.getPaidBy()));
             expense.setPaidBy(payer);
         }
 
-        //  Cập nhật trạng thái nếu có
         if (dto.getStatus() != null) {
             expense.setStatus(dto.getStatus());
         }
 
+        // Lưu Expense đã được cập nhật
         expense = expenseRepository.save(expense);
+
         return expenseMapper.toDTO(expense);
     }
+
 
 
     @Override
