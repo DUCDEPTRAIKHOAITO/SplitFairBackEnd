@@ -29,8 +29,7 @@ public class ExpenseShareServiceImpl implements ExpenseShareService {
     private final DebtRepository debtRepository;
     private final ExpenseShareMapper expenseShareMapper;
 
-
-    //Tạo phần chia chi phí riêng lẻ
+    // Tạo phần chia chi phí riêng lẻ
     @Override
     public ExpenseShareDTO createShare(ExpenseShareDTO dto) {
         Expense expense = expenseRepository.findById(dto.getExpenseId())
@@ -47,6 +46,12 @@ public class ExpenseShareServiceImpl implements ExpenseShareService {
 
         share = expenseShareRepository.save(share);
 
+        // 👉 Không tạo Debt nếu chính người trả tiền (đã trả rồi, không nợ ai)
+        User paidBy = expense.getPaidBy();
+        if (paidBy != null && paidBy.getId().equals(user.getId())) {
+            return expenseShareMapper.toDTO(share);
+        }
+
         BigDecimal shareAmount = expense.getAmount()
                 .multiply(share.getPercentage())
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
@@ -54,14 +59,13 @@ public class ExpenseShareServiceImpl implements ExpenseShareService {
         Debt debt = new Debt();
         debt.setExpense(expense);
         debt.setAmountFrom(user);
-        debt.setAmountTo(expense.getPaidBy());
+        debt.setAmountTo(paidBy);
         debt.setAmount(shareAmount);
         debt.setStatus(DebtStatus.UNSETTLED);
         debtRepository.save(debt);
 
         return expenseShareMapper.toDTO(share);
     }
-
 
     @Override
     public ExpenseShareDTO updateShareStatus(UUID id, String status) {
@@ -89,7 +93,6 @@ public class ExpenseShareServiceImpl implements ExpenseShareService {
         return expenseShareMapper.toDTO(share);
     }
 
-
     @Override
     public List<ExpenseShareDTO> getSharesByExpense(UUID expenseId) {
         Expense expense = expenseRepository.findById(expenseId)
@@ -101,7 +104,6 @@ public class ExpenseShareServiceImpl implements ExpenseShareService {
                 .collect(Collectors.toList());
     }
 
-
     @Override
     public List<ExpenseShareDTO> getSharesByUser(UUID userId) {
         User user = userRepository.findById(userId)
@@ -112,7 +114,6 @@ public class ExpenseShareServiceImpl implements ExpenseShareService {
                 .map(expenseShareMapper::toDTO)
                 .collect(Collectors.toList());
     }
-
 
     @Override
     public void deleteShare(UUID id) {
@@ -128,9 +129,7 @@ public class ExpenseShareServiceImpl implements ExpenseShareService {
         expenseShareRepository.delete(share);
     }
 
-
-
-    //Lưu danh sách chia từ frontend (frontend đã chia sẵn)
+    // Lưu danh sách chia từ frontend (frontend đã chia sẵn)
     @Override
     @Transactional
     public void saveExpenseShares(ExpenseShareSaveRequest request) {
@@ -147,6 +146,14 @@ public class ExpenseShareServiceImpl implements ExpenseShareService {
 
         User paidBy = expense.getPaidBy();
 
+        // 👉 XÓA TẤT CẢ share & debt CŨ của expense trước khi lưu lại
+        List<ExpenseShare> oldShares = expenseShareRepository.findByExpense(expense);
+        expenseShareRepository.deleteAll(oldShares);
+
+        List<Debt> oldDebts = debtRepository.findByExpense(expense);
+        debtRepository.deleteAll(oldDebts);
+
+        // 👉 Tạo lại share + debt mới theo data từ frontend
         for (ExpenseShareSaveRequest.ShareInput input : request.getShares()) {
             User user = userRepository.findById(input.getUserId())
                     .orElseThrow(() -> new RuntimeException("User not found with id: " + input.getUserId()));
@@ -157,6 +164,11 @@ public class ExpenseShareServiceImpl implements ExpenseShareService {
             share.setPercentage(input.getPercentage());
             share.setStatus(ShareStatus.UNPAID);
             expenseShareRepository.save(share);
+
+            // Không tạo Debt cho chính người trả tiền
+            if (paidBy != null && paidBy.getId().equals(user.getId())) {
+                continue;
+            }
 
             Debt debt = new Debt();
             debt.setExpense(expense);

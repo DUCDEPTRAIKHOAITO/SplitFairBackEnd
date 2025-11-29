@@ -10,4 +10,5 @@ public interface UserService {
     UserDTO createUser(UserDTO dto);
     UserDTO updateUser(UserDTO dto);
     void deleteUser(UUID id);
+    List<UserDTO> searchUsers(String keyword);
 }

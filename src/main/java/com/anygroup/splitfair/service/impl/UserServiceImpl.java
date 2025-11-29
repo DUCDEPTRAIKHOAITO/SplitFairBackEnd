@@ -12,6 +12,7 @@ import com.anygroup.splitfair.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -53,6 +54,7 @@ public class UserServiceImpl implements UserService {
 
         return userMapper.toDTO(user);
     }
+
     @Override
     public UserDTO updateUser(UserDTO dto) {
         User existingUser = userRepository.findById(dto.getId())
@@ -70,7 +72,6 @@ public class UserServiceImpl implements UserService {
             existingUser.setRole(role);
         }
 
-        // Lưu lại
         existingUser = userRepository.save(existingUser);
 
         return userMapper.toDTO(existingUser);
@@ -82,5 +83,20 @@ public class UserServiceImpl implements UserService {
             throw new RuntimeException("User not found with id: " + id);
         }
         userRepository.deleteById(id);
+    }
+
+    //  METHOD SEARCH
+    @Override
+    public List<UserDTO> searchUsers(String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            // có thể return empty list hoặc throw exception
+            return List.of();
+        }
+
+        List<User> users = userRepository.searchActiveUsers(keyword.trim());
+
+        return users.stream()
+                .map(userMapper::toDTO)
+                .collect(Collectors.toList());
     }
 }

@@ -25,7 +25,6 @@ public class DebtServiceImpl implements DebtService {
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
 
-
     @Override
     public List<DebtDTO> getAllDebts() {
         return debtRepository.findAll()
@@ -34,7 +33,6 @@ public class DebtServiceImpl implements DebtService {
                 .collect(Collectors.toList());
     }
 
-    //  nợ theo ID
     @Override
     public DebtDTO getDebtById(UUID id) {
         Debt debt = debtRepository.findById(id)
@@ -42,15 +40,15 @@ public class DebtServiceImpl implements DebtService {
         return debtMapper.toDTO(debt);
     }
 
-    // Tạo nợ thủ công (hiếm khi dùng)
     @Override
     public DebtDTO createDebt(DebtDTO dto) {
         Debt debt = debtMapper.toEntity(dto);
-        debt.setStatus(DebtStatus.UNSETTLED);
+        if (debt.getStatus() == null) {
+            debt.setStatus(DebtStatus.UNSETTLED);
+        }
         debt = debtRepository.save(debt);
         return debtMapper.toDTO(debt);
     }
-
 
     @Override
     public DebtDTO updateDebt(DebtDTO dto) {
@@ -66,13 +64,11 @@ public class DebtServiceImpl implements DebtService {
         return debtMapper.toDTO(updated);
     }
 
-
     @Override
     public void deleteDebt(UUID id) {
         debtRepository.deleteById(id);
     }
 
-    //Đánh dấu nợ đã được thanh toán
     @Override
     public DebtDTO markAsSettled(UUID id) {
         Debt debt = debtRepository.findById(id)
@@ -82,7 +78,8 @@ public class DebtServiceImpl implements DebtService {
         return debtMapper.toDTO(debt);
     }
 
-    // Tính toán nợ khi có Expense mới
+    // ⚠️ HÀM NÀY HIỆN CHƯA THẤY BẠN GỌI
+    // Nếu đang dùng saveExpenseShares để tạo Debt thì không cần gọi thêm hàm này nữa.
     @Override
     public void calculateDebtsForExpense(Expense expense) {
         List<ExpenseShare> shares = expenseShareRepository.findByExpense(expense);
@@ -92,15 +89,13 @@ public class DebtServiceImpl implements DebtService {
             User debtor = share.getUser();
             if (debtor.getId().equals(payer.getId())) continue; // Người trả không nợ chính mình
 
-            // Tính số tiền nợ theo phần trăm chia
             BigDecimal amount = expense.getAmount()
                     .multiply(share.getPercentage().divide(BigDecimal.valueOf(100)));
 
-            // Kiểm tra nếu đã có nợ giữa hai người
             Optional<Debt> existing = debtRepository.findByAmountFromAndAmountTo(debtor, payer);
             if (existing.isPresent()) {
                 Debt debt = existing.get();
-                debt.setAmount(debt.getAmount().add(amount)); // cộng dồn
+                debt.setAmount(debt.getAmount().add(amount));
                 debtRepository.save(debt);
             } else {
                 Debt newDebt = Debt.builder()
@@ -115,13 +110,15 @@ public class DebtServiceImpl implements DebtService {
         }
     }
 
-    // Lấy tổng kết số dư nợ của tất cả người dùng
+    // Tổng kết số dư nợ của tất cả người dùng (chỉ tính UNSETTLED)
     @Override
     public Map<UUID, BigDecimal> getNetBalances() {
         List<Debt> debts = debtRepository.findAll();
         Map<UUID, BigDecimal> balance = new HashMap<>();
 
         for (Debt d : debts) {
+            if (d.getStatus() == DebtStatus.SETTLED) continue; // bỏ nợ đã thanh toán
+
             UUID from = d.getAmountFrom().getId();
             UUID to = d.getAmountTo().getId();
             BigDecimal amount = d.getAmount();
@@ -133,7 +130,6 @@ public class DebtServiceImpl implements DebtService {
         return balance;
     }
 
-    //Trả về dạng danh sách dễ đọc
     @Override
     public List<String> getReadableBalances() {
         Map<UUID, BigDecimal> balances = getNetBalances();
@@ -144,12 +140,10 @@ public class DebtServiceImpl implements DebtService {
             UUID userId = entry.getKey();
             BigDecimal amount = entry.getValue();
 
-            // ✅ Lấy tên người dùng đúng cách
             String userName = userRepository.findById(userId)
                     .map(User::getUserName)
                     .orElse("Unknown User");
 
-            // ✅ Định dạng kết quả hiển thị
             if (amount.compareTo(BigDecimal.ZERO) < 0) {
                 readable.add(userName + " owes " + amount.abs() + " VND");
             } else if (amount.compareTo(BigDecimal.ZERO) > 0) {
@@ -162,7 +156,85 @@ public class DebtServiceImpl implements DebtService {
         return readable;
     }
 
-    // Lấy danh sách nợ theo người dùng
+    // 👉 HÀM BẠN ĐANG DÙNG ĐỂ TRẢ VỀ JSON:
+    // {
+    //   userId, totalOwes, totalIsOwed, netBalance, details[]
+    // }
+    @Override
+    public Map<String, Object> getUserDebtDetails(UUID userId) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // A nợ người khác
+        List<Debt> owes = debtRepository.findByAmountFrom(user)
+                .stream()
+                .filter(d -> d.getStatus() != DebtStatus.SETTLED)
+                .collect(Collectors.toList());
+
+        // Người khác nợ A
+        List<Debt> isOwed = debtRepository.findByAmountTo(user)
+                .stream()
+                .filter(d -> d.getStatus() != DebtStatus.SETTLED)
+                .collect(Collectors.toList());
+
+        Map<UUID, Summary> summaryMap = new HashMap<>();
+
+        // --- A NỢ NGƯỜI KHÁC ---
+        for (Debt d : owes) {
+            UUID otherId = d.getAmountTo().getId();
+            summaryMap.putIfAbsent(otherId, new Summary());
+            summaryMap.get(otherId).owes = summaryMap.get(otherId).owes.add(d.getAmount());
+        }
+
+        // --- NGƯỜI KHÁC NỢ A ---
+        for (Debt d : isOwed) {
+            UUID otherId = d.getAmountFrom().getId();
+            summaryMap.putIfAbsent(otherId, new Summary());
+            summaryMap.get(otherId).isOwed = summaryMap.get(otherId).isOwed.add(d.getAmount());
+        }
+
+        BigDecimal totalOwes = BigDecimal.ZERO;
+        BigDecimal totalIsOwed = BigDecimal.ZERO;
+
+        List<Map<String, Object>> details = new ArrayList<>();
+
+        for (UUID otherId : summaryMap.keySet()) {
+
+            if (otherId.equals(userId)) continue;
+
+            Summary s = summaryMap.get(otherId);
+            User other = userRepository.findById(otherId).orElse(null);
+
+            totalOwes = totalOwes.add(s.owes);
+            totalIsOwed = totalIsOwed.add(s.isOwed);
+
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("userId", otherId);
+            entry.put("userName", other != null ? other.getUserName() : "Unknown");
+            entry.put("owes", s.owes);
+            entry.put("isOwed", s.isOwed);
+
+            details.add(entry);
+        }
+
+        BigDecimal net = totalIsOwed.subtract(totalOwes);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("userId", userId);
+        response.put("totalOwes", totalOwes);
+        response.put("totalIsOwed", totalIsOwed);
+        response.put("netBalance", net);
+        response.put("details", details);
+
+        return response;
+    }
+
+    static class Summary {
+        BigDecimal owes = BigDecimal.ZERO;
+        BigDecimal isOwed = BigDecimal.ZERO;
+    }
+
     @Override
     public List<DebtDTO> getDebtsByUser(UUID userId) {
         User user = userRepository.findById(userId)
@@ -171,6 +243,9 @@ public class DebtServiceImpl implements DebtService {
         List<Debt> debts = debtRepository.findByAmountFrom(user);
         debts.addAll(debtRepository.findByAmountTo(user));
 
-        return debts.stream().map(debtMapper::toDTO).collect(Collectors.toList());
+        return debts.stream()
+                .filter(d -> d.getStatus() != DebtStatus.SETTLED)
+                .map(debtMapper::toDTO)
+                .collect(Collectors.toList());
     }
 }

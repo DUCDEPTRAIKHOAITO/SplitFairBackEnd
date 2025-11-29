@@ -1,6 +1,7 @@
 package com.anygroup.splitfair.service;
 
 import com.anygroup.splitfair.dto.GroupDTO;
+import com.anygroup.splitfair.dto.UserDTO;
 import com.anygroup.splitfair.model.GroupMember;
 
 import java.util.List;
@@ -16,4 +17,5 @@ public interface GroupService {
     List<GroupDTO> getGroupsCreatedByUser(UUID userId);
 
     List<GroupMember> getMembersByGroup(UUID groupId);
+    List<UserDTO> searchUsersToAdd(UUID groupId, String keyword);
 }

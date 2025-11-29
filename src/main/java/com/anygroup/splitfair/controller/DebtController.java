@@ -72,4 +72,10 @@ public class DebtController {
     public ResponseEntity<List<String>> getReadableBalances() {
         return ResponseEntity.ok(debtService.getReadableBalances());
     }
+
+    @GetMapping("/details/{userId}")
+    public ResponseEntity<Map<String, Object>> getUserDebtDetails(@PathVariable UUID userId) {
+        return ResponseEntity.ok(debtService.getUserDebtDetails(userId));
+    }
+
 }

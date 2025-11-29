@@ -20,4 +20,6 @@ public interface DebtService {
     Map<UUID, BigDecimal> getNetBalances();
     List<String> getReadableBalances();
     List<DebtDTO> getDebtsByUser(UUID userId);
+    Map<String, Object> getUserDebtDetails(UUID userId);
+
 }

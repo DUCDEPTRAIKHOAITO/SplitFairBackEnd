@@ -5,6 +5,8 @@ import com.anygroup.splitfair.dto.GroupMemberDTO;
 import com.anygroup.splitfair.enums.RoleType;
 import com.anygroup.splitfair.mapper.GroupMapper;
 import com.anygroup.splitfair.mapper.GroupMemberMapper;
+import com.anygroup.splitfair.mapper.UserMapper;
+import com.anygroup.splitfair.dto.UserDTO;
 import com.anygroup.splitfair.model.*;
 import com.anygroup.splitfair.repository.*;
 import com.anygroup.splitfair.service.GroupService;
@@ -27,7 +29,8 @@ public class GroupServiceImpl implements GroupService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final GroupMapper groupMapper;
-    private final GroupMemberMapper groupMemberMapper; // ✅ thêm mapper này
+    private final GroupMemberMapper groupMemberMapper;
+    private final UserMapper userMapper;// ✅ thêm mapper này
 
     @Override
     public GroupDTO createGroup(GroupDTO dto, UUID creatorId) {
@@ -137,6 +140,36 @@ public class GroupServiceImpl implements GroupService {
                 .build();
 
         groupMemberRepository.save(newMember);
+    }
+
+    @Override
+    public List<UserDTO> searchUsersToAdd(UUID groupId, String keyword) {
+        Group group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new RuntimeException("Group not found with id: " + groupId));
+
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return List.of();
+        }
+
+        // 1. Lấy danh sách member hiện tại của group
+        List<GroupMember> currentMembers = groupMemberRepository.findByGroup(group);
+        // Tập userId đã trong group
+        var existingUserIds = currentMembers.stream()
+                .map(gm -> gm.getUser().getId())
+                .collect(Collectors.toSet());
+
+        // 2. Tìm tất cả user ACTIVE match keyword
+        List<User> candidates = userRepository.searchActiveUsers(keyword.trim());
+
+        // 3. Lọc bỏ user đã thuộc group
+        List<User> filtered = candidates.stream()
+                .filter(u -> !existingUserIds.contains(u.getId()))
+                .collect(Collectors.toList());
+
+        // 4. Map sang DTO
+        return filtered.stream()
+                .map(userMapper::toDTO)
+                .collect(Collectors.toList());
     }
 
     @Override

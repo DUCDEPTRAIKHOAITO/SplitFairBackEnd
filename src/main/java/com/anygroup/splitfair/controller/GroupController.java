@@ -1,6 +1,7 @@
 package com.anygroup.splitfair.controller;
 
 import com.anygroup.splitfair.dto.GroupDTO;
+import com.anygroup.splitfair.dto.UserDTO;
 import com.anygroup.splitfair.model.GroupMember;
 import com.anygroup.splitfair.service.GroupService;
 import lombok.RequiredArgsConstructor;
@@ -70,4 +71,13 @@ public class GroupController {
         groupService.deleteGroup(id);
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/{groupId}/search-users")
+    public ResponseEntity<List<UserDTO>> searchUsersToAdd(
+            @PathVariable UUID groupId,
+            @RequestParam("keyword") String keyword
+    ) {
+        return ResponseEntity.ok(groupService.searchUsersToAdd(groupId, keyword));
+    }
+
 }

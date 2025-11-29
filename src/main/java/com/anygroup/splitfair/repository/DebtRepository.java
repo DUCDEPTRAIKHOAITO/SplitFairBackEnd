@@ -20,6 +20,11 @@ public interface DebtRepository extends JpaRepository<Debt, UUID> {
     List<Debt> findByAmountTo(User toUser);
 
     Optional<Debt> findByExpenseAndAmountFromAndAmountTo(Expense expense, User from, User to);
+
     Optional<Debt> findByAmountFromAndAmountTo(User from, User to);
+
     List<Debt> findByExpenseAndAmountFrom(Expense expense, User amountFrom);
+
+    // 👉 Thêm: lấy tất cả Debt của 1 Expense (dùng khi lưu lại chia tiền)
+    List<Debt> findByExpense(Expense expense);
 }
